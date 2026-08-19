@@ -1,0 +1,25 @@
+{
+  "name": "graphwright",
+  "version": "0.1.0",
+  "description": "Portable visualization companion for codegraph indexes — render symbol neighborhoods and generate browsable wikis.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "graphwright": "./bin/graphwright.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "SPEC.md"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "test": "node --test test/acceptance.test.js"
+  },
+  "devDependencies": {
+    "@colbymchenry/codegraph": "1.5.0"
+  }
+}
