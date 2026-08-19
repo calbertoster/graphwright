@@ -10,3 +10,4 @@ Standing rules:
 4. **Evidence discipline** — when you verify a new fact about codegraph's schema or CLI by execution, add it to SPEC §2 with the date; never state behavior as fact from memory.
 5. **README stays honest** — usage examples must match the actually-implemented flags; update them in the same change.
 6. Pin `@colbymchenry/codegraph` **exactly** (1.5.0) in devDependencies; version bumps are a deliberate change with a §2 re-verification pass, not a routine update.
+7. **Definition of done is SPEC §7, not self-assessment** — work in an implement→test→fix loop until all five acceptance tests pass and §9 is fully checked; never claim completion without the passing test output. Blocked on a spec ambiguity? Make the smallest reasonable choice, record it in SPEC.md (dated), and continue — don't stall waiting for an answer.
