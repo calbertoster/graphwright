@@ -1,0 +1,4 @@
+node_modules/
+test/fixture/.codegraph/
+*.tsbuildinfo
+.DS_Store
