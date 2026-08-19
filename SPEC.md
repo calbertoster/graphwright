@@ -1,6 +1,6 @@
 # Graphwright — v1 Specification
 
-> Status: **v1 built, all acceptance tests passing** (2026-08-19). §9 is the build checklist — update it at the end of every working session; it is this repo's working memory.
+> Status: **v1 built, all acceptance tests passing; v2 (`serve`, interactive viewer) spec committed 2026-08-19, unbuilt — see §10, checklist §11.** §9/§11 are the build checklists — update them at the end of every working session; they are this repo's working memory.
 > Origin: designed in the SRVS-One project (2026-08-19). **Every claim marked "verified" below was verified by execution** against codegraph 1.5.0 and a real 362-file index (5,709 nodes / 12,649 edges); nothing in §2 is guessed.
 
 Graphwright is a portable, human-facing visualization companion for [colbymchenry/codegraph](https://github.com/colbymchenry/codegraph) indexes: `graphwright view` renders a filtered neighborhood of any symbol as SVG/DOT/Mermaid, and `graphwright wiki` generates a browsable markdown wiki of the codebase from the index. It works in **any** repo that has run `codegraph init` — no coupling to any particular project.
@@ -92,6 +92,8 @@ graphwright wiki [--out docs/codegraph-wiki] [--group-depth 2]
 
 Web server / live UI · file watching · semantic clustering · embeddings · sources other than codegraph · writing to the index.
 
+> Superseded in part, 2026-08-19: **"web server / live UI" moves into scope as v2** — see §10. The other non-goals stand.
+
 ## 9. Build checklist (update at session end — this is the repo's working memory)
 
 - [x] Package skeleton (package.json, bin wiring, engines, ESM)
@@ -105,3 +107,64 @@ Web server / live UI · file watching · semantic clustering · embeddings · so
 - [x] README usage docs (sync with actual flags)
 
 **v1 complete (2026-08-19).** All 5 §7 acceptance tests pass (`npm test` → `node --test test/acceptance.test.js`). Zero runtime dependencies (only `@colbymchenry/codegraph` as a pinned devDependency for building the test fixture). See §2 for facts/decisions recorded during this build session, dated 2026-08-19.
+
+## 10. v2 — `graphwright serve`, the interactive viewer (spec committed 2026-08-19, unbuilt)
+
+A local web viewer over `codegraph.db`: multiple linked views of the graph in the browser, live against the index, with editor jump-to-source. Retires §8's "web server / live UI" non-goal on the record.
+
+### 10.1 Prior art & attribution policy
+
+The view taxonomy and interaction model consciously borrow from [brn-mwai/codegraph](https://github.com/brn-mwai/codegraph) (MIT; Python; single-author and possibly dormant — created 2026-07-25, quiet since 2026-07-30): several views over one graph switched on number keys, live re-render on index change with **stable node positions**, and double-click opening the file in the editor. **Attribution rules:**
+- Idea-level borrowing → credit here and in README acknowledgements (this section is that credit).
+- Verbatim or adapted **code** (e.g. its frontend view implementations) → keep its MIT copyright header in the vendored/adapted file and add an entry to `THIRD_PARTY_NOTICES.md` (create it on first use).
+- Its Python indexer, ontology/rules engine, and MCP server are **not** used — graphwright reads `codegraph.db` (§2) only. Notably, its name-based call resolution is exactly what §10.2 forbids.
+
+### 10.2 The collision constraint (verified 2026-08-19, reference index)
+
+On the 362-file reference index: 3,447 symbols (excluding `file`/`import` kinds); **464 bare names are shared by 2+ symbols, covering 1,885 symbols — 55%**. Cross-file method duplicates include `constructor` ×83, `handleError` ×11, `transformDrizzleToRaw` ×9, `update` ×8, `create` ×8. Therefore, everywhere in v2: **node identity is `nodes.id`; display disambiguates with `qualified_name` and `file_path:start_line`; bare names are search input only — never merge keys.**
+
+### 10.3 Architecture
+
+- `graphwright serve [--port 4173] [--project <path>] [--editor-url <template>] [--open]` — a `node:http` server, zero runtime deps, all reads through the existing `src/db.mjs`.
+- Serves: (a) one **self-contained** HTML app (no CDN references — must work firewalled/air-gapped); (b) a read-only JSON API; (c) an SSE stream.
+- Frontend: single-page, vendored d3 v7 (ISC) committed under `vendor/` with license header; plain ES modules, **no build step**.
+- **API** (all deterministic ordering): `/api/meta` (counts, schema version, groups) · `/api/search?q=` (FTS via `nodes_fts`; returns candidates with kind, `qualified_name`, location) · `/api/node/:id` (symbol + its edges) · `/api/neighborhood/:id?depth&kinds&direction` (the v1 BFS) · `/api/files` (tree with `node_count`) · `/api/groups` (§5 grouping) · `/api/edges?kinds&group` (scoped edge lists — never unscoped whole-graph).
+- **Live updates**: the server never indexes — codegraph's watcher owns the db. Poll cheaply (db file mtime + `MAX(nodes.updated_at)`, ~2s); on change emit SSE `index-changed`; the client refetches its current view and preserves layout positions keyed by node id.
+- **Editor jump**: double-click → `vscode://file/{path}:{line}` by default; `--editor-url` templates other editors.
+
+### 10.4 Views (v2 ships four; number keys; shared search/selection state)
+
+1. **Explore** (default) — search → pick candidate → force-directed neighborhood with depth/kinds/direction controls mirroring `view`'s flags; click-to-expand; explicit "load more" past the size cap.
+2. **Imports** — file-level import graph, collapsible by directory (§5 grouping), cycles highlighted.
+3. **Calls** — symbol-level `calls`/`references` subgraph scoped to a selected group or file (never whole-graph; §2 scale facts).
+4. **Treemap** — directory treemap sized by `files.node_count`, colored by language; click-through into Explore.
+
+Deferred to v3 (recorded, not promised): flow/trace, layers/contracts (dependency-cruiser owns rules in host repos), matrix, radial.
+
+### 10.5 Acceptance (extends §7; same fixture)
+
+6. `serve` starts; `GET /` returns HTML containing **no** external `http(s)` resource references (self-containment check).
+7. `/api/search` on a fixture symbol returns the known candidates with qualified names; `/api/neighborhood` on §7-test-1's method returns the known cross-file call edge.
+8. Rebuilding the fixture index while the server runs yields an SSE `index-changed` event within 5s.
+9. Identical API queries return byte-identical responses (ordering discipline).
+10. The server cannot write: a write attempt through its db handle throws (read-only assertion).
+
+Manual UI checklist (README, not automated): four views render on a real index; double-click opens the editor; positions stay stable across an SSE refresh.
+
+### 10.6 v2 non-goals
+
+Own indexer/watcher (codegraph owns the db) · an MCP server (host repos already designate their agent layer) · auth/multi-user (localhost tool) · UI-state persistence beyond the URL hash · browser-automation tests in CI (manual checklist instead).
+
+## 11. v2 build checklist (working memory — update at session end)
+
+- [ ] `serve` command skeleton: node:http, static app, --port/--project/--open
+- [ ] JSON API endpoints over src/db.mjs (deterministic ordering)
+- [ ] SSE index-change detection (mtime + MAX(updated_at) poll)
+- [ ] Vendored d3 + THIRD_PARTY_NOTICES.md
+- [ ] View 1: Explore (search → candidates → force layout, expand, caps)
+- [ ] View 2: Imports (directory-collapsible, cycle highlight)
+- [ ] View 3: Calls (group/file-scoped)
+- [ ] View 4: Treemap
+- [ ] Editor-jump wiring (+ --editor-url template)
+- [ ] Acceptance tests 6–10 + manual UI checklist in README
+- [ ] README: serve section, screenshots optional
