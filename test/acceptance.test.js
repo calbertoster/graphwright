@@ -2,16 +2,27 @@ import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdtempSync, cpSync, rmSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, cpSync, rmSync, readdirSync, readFileSync, appendFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
+import { createApp } from '../src/serve.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const CLI = join(ROOT, 'bin', 'graphwright.mjs');
 const FIXTURE_DIR = join(ROOT, 'test', 'fixture');
 const FIXTURE_DB = join(FIXTURE_DIR, '.codegraph', 'codegraph.db');
 const CODEGRAPH_BIN = join(ROOT, 'node_modules', '.bin', 'codegraph');
+
+async function listenEphemeral(server) {
+  await new Promise((resolve) => server.listen(0, resolve));
+  return server.address().port;
+}
+
+async function closeServer(server) {
+  server.closeAllConnections?.();
+  await new Promise((resolve) => server.close(resolve));
+}
 
 function runCli(args, { cwd = ROOT, env = process.env } = {}) {
   return spawnSync(process.execPath, [CLI, ...args], { cwd, env, encoding: 'utf8' });
@@ -143,5 +154,116 @@ test('dot absent from PATH falls back to .dot output with a notice; exit 0', () 
     assert.match(dotText, /^digraph neighborhood \{/);
   } finally {
     rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+// --- v2 (SPEC §10.5): graphwright serve --------------------------------
+
+test('serve: GET / returns HTML with no external http(s) resource references (self-containment)', async () => {
+  const { server } = createApp({ dbPath: FIXTURE_DB });
+  const port = await listenEphemeral(server);
+  try {
+    const res = await fetch(`http://localhost:${port}/`);
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /<html/i);
+    assert.doesNotMatch(html, /https?:\/\//i, 'expected no external http(s) resource references in the served HTML');
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('serve: /api/search finds known candidates with qualified names; /api/neighborhood returns the known cross-file call edge', async () => {
+  const { server } = createApp({ dbPath: FIXTURE_DB });
+  const port = await listenEphemeral(server);
+  try {
+    const searchRes = await fetch(`http://localhost:${port}/api/search?q=sayHello`);
+    assert.equal(searchRes.status, 200);
+    const searchBody = await searchRes.json();
+    const origin = searchBody.candidates.find((c) => c.name === 'sayHello' && c.file_path.includes('greeting-service'));
+    assert.ok(origin, `expected a sayHello candidate in:\n${JSON.stringify(searchBody)}`);
+    assert.ok(origin.qualified_name, 'candidates must carry qualified_name for disambiguation (SPEC §10.2)');
+
+    const nbRes = await fetch(`http://localhost:${port}/api/neighborhood/${encodeURIComponent(origin.id)}?depth=2`);
+    assert.equal(nbRes.status, 200);
+    const nb = await nbRes.json();
+    const byId = new Map(nb.nodes.map((n) => [n.id, n]));
+    const foundCrossFileCall = nb.edges.some((e) => {
+      const s = byId.get(e.source);
+      const t = byId.get(e.target);
+      return (
+        e.kind === 'calls' &&
+        s?.name === 'sayHello' &&
+        s.file_path.includes('greeting-service.ts') &&
+        t?.name === 'greet' &&
+        t.file_path.includes('english-greeter.ts')
+      );
+    });
+    assert.ok(foundCrossFileCall, `expected the known cross-file calls edge in:\n${JSON.stringify(nb)}`);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('serve: rebuilding the fixture index emits an SSE index-changed event within 5s', async () => {
+  const tmpProject = mkdtempSync(join(tmpdir(), 'graphwright-sse-'));
+  try {
+    cpSync(FIXTURE_DIR, tmpProject, { recursive: true });
+    const dbPath = join(tmpProject, '.codegraph', 'codegraph.db');
+    const { server } = createApp({ dbPath });
+    const port = await listenEphemeral(server);
+    try {
+      const res = await fetch(`http://localhost:${port}/api/events`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let sawEvent = false;
+      const readLoop = (async () => {
+        while (!sawEvent) {
+          const { value, done } = await reader.read();
+          if (done) return;
+          buffer += decoder.decode(value, { stream: true });
+          if (buffer.includes('event: index-changed')) sawEvent = true;
+        }
+      })();
+
+      appendFileSync(join(tmpProject, 'src', 'demo.ts'), '\n// sse-test-touch\n');
+      const syncResult = spawnSync(process.execPath, [CODEGRAPH_BIN, 'sync', tmpProject], { encoding: 'utf8' });
+      assert.equal(syncResult.status, 0, `codegraph sync failed: ${syncResult.stderr}\n${syncResult.stdout}`);
+
+      await Promise.race([readLoop, new Promise((resolve) => setTimeout(resolve, 5000))]);
+      await reader.cancel().catch(() => {});
+      assert.ok(sawEvent, 'expected an SSE index-changed event within 5s of rebuilding the index');
+    } finally {
+      await closeServer(server);
+    }
+  } finally {
+    rmSync(tmpProject, { recursive: true, force: true });
+  }
+});
+
+test('serve: identical API queries return byte-identical responses (ordering discipline)', async () => {
+  const { server } = createApp({ dbPath: FIXTURE_DB });
+  const port = await listenEphemeral(server);
+  try {
+    const paths = ['/api/meta', '/api/search?q=e', '/api/files', '/api/groups', '/api/edges?group=src&kinds=contains'];
+    for (const p of paths) {
+      const [a, b] = await Promise.all([
+        fetch(`http://localhost:${port}${p}`).then((r) => r.text()),
+        fetch(`http://localhost:${port}${p}`).then((r) => r.text()),
+      ]);
+      assert.equal(a, b, `expected byte-identical responses for ${p}`);
+    }
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('serve: the server cannot write — a write attempt through its read-only db handle throws', () => {
+  const { db, server } = createApp({ dbPath: FIXTURE_DB });
+  try {
+    assert.throws(() => db.exec('DELETE FROM nodes'), /readonly/i);
+  } finally {
+    server.gwClose();
   }
 });

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { runView } from '../src/view.mjs';
 import { runWiki } from '../src/wiki.mjs';
+import { runServe } from '../src/serve.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8'));
@@ -14,12 +15,13 @@ const HELP = `Usage: graphwright <command> [options]
 Commands:
   view <symbol>   Render a filtered neighborhood of a symbol
   wiki            Generate a browsable markdown wiki
+  serve           Start the interactive web viewer
 
 Options:
   -h, --help      Show help
   -V, --version   Show version
 
-Run "graphwright view --help" or "graphwright wiki --help" for command-specific options.
+Run "graphwright view --help", "graphwright wiki --help", or "graphwright serve --help" for command-specific options.
 `;
 
 const VIEW_HELP = `Usage: graphwright view <symbol> [options]
@@ -44,6 +46,16 @@ Options:
   --banner <template>        Banner template ({cmd} and {date} placeholders)
   --max-diagram-edges <n>    Diagram edge cap before falling back to a list (default: 150)
   --project <path>           Project directory (overrides index auto-discovery)
+  -h, --help                  Show this help
+`;
+
+const SERVE_HELP = `Usage: graphwright serve [options]
+
+Options:
+  --port <n>                 Port to listen on (default: 4173)
+  --project <path>           Project directory (overrides index auto-discovery)
+  --editor-url <template>    Editor URL template ({path} and {line} placeholders); default vscode://file/{path}:{line}
+  --open                     Open the app in the default browser once listening
   -h, --help                  Show this help
 `;
 
@@ -177,6 +189,42 @@ if (command === 'view') {
     { cwd: process.cwd(), stdout: process.stdout, stderr: process.stderr }
   );
   process.exit(exitCode);
+} else if (command === 'serve') {
+  let values;
+  try {
+    ({ values } = parseArgs({
+      args: rest,
+      options: {
+        port: { type: 'string', default: '4173' },
+        project: { type: 'string' },
+        'editor-url': { type: 'string' },
+        open: { type: 'boolean', default: false },
+        help: { type: 'boolean', short: 'h', default: false },
+      },
+      allowPositionals: false,
+    }));
+  } catch (err) {
+    fail(err.message);
+  }
+
+  if (values.help) {
+    process.stdout.write(SERVE_HELP);
+    process.exit(0);
+  }
+
+  const port = parseInt_(values.port, '--port', { min: 0 });
+
+  const exitCode = await runServe(
+    {
+      port,
+      project: values.project,
+      editorUrl: values['editor-url'],
+      open: values.open,
+    },
+    { cwd: process.cwd(), stdout: process.stdout, stderr: process.stderr }
+  );
+  if (exitCode != null) process.exit(exitCode);
+  // else: the server is listening — keep the process alive, do not exit.
 } else {
   fail(`Unknown command: "${command}"\n\n${HELP}`);
 }

@@ -69,6 +69,19 @@ export function openIndex(path) {
   return { db, warning };
 }
 
+/**
+ * `MAX(schema_versions.version)` for /api/meta. Never throws (mirrors
+ * openIndex's own guard query) — returns null if the table is unreadable.
+ */
+export function getSchemaVersion(db) {
+  try {
+    const row = db.prepare('SELECT MAX(version) AS v FROM schema_versions').get();
+    return row ? row.v : null;
+  } catch {
+    return null;
+  }
+}
+
 const IMPORT_KIND = 'import';
 
 /**
@@ -215,4 +228,82 @@ export function getAllEdges(db, kinds) {
   return db
     .prepare(`SELECT * FROM edges WHERE kind IN (${placeholders}) ORDER BY source ASC, target ASC, kind ASC`)
     .all(...kinds);
+}
+
+/**
+ * All outgoing/incoming edges for a node, unfiltered by kind (used by the
+ * `serve` node-detail endpoint, which shows a symbol's full edge set rather
+ * than the traversal-default subset `view` uses).
+ */
+export function getAllOutgoingEdgesForNode(db, nodeId) {
+  return db.prepare('SELECT * FROM edges WHERE source = ? ORDER BY target ASC, kind ASC').all(nodeId);
+}
+
+export function getAllIncomingEdgesForNode(db, nodeId) {
+  return db.prepare('SELECT * FROM edges WHERE target = ? ORDER BY source ASC, kind ASC').all(nodeId);
+}
+
+/**
+ * All rows of `files`, sorted deterministically. `node_count` (verified
+ * SPEC §2) is already computed by codegraph — no join against `nodes` needed.
+ */
+export function getAllFiles(db) {
+  return db.prepare('SELECT * FROM files ORDER BY path ASC').all();
+}
+
+/**
+ * Basic index-wide counts for /api/meta.
+ */
+export function getCounts(db) {
+  const nodeCount = db.prepare('SELECT COUNT(*) AS c FROM nodes').get().c;
+  const edgeCount = db.prepare('SELECT COUNT(*) AS c FROM edges').get().c;
+  const fileCount = db.prepare('SELECT COUNT(*) AS c FROM files').get().c;
+  return { nodeCount, edgeCount, fileCount };
+}
+
+/**
+ * `MAX(nodes.updated_at)` — one half of the serve SSE change-fingerprint
+ * (SPEC §10.3); paired by the caller with the db file's mtime.
+ */
+export function getMaxUpdatedAt(db) {
+  const row = db.prepare('SELECT MAX(updated_at) AS u FROM nodes').get();
+  return row ? row.u : null;
+}
+
+/**
+ * Turn free-text search input into a safe FTS5 MATCH query: split on
+ * whitespace, quote each term as an FTS5 string literal (neutralizing any
+ * FTS5 query-syntax operators the user typed, e.g. `OR`, `-`, `*`, `"`), and
+ * suffix each with `*` for prefix matching. Returns '' if there is nothing
+ * usable to search (caller must treat that as "no results", not query it —
+ * an empty MATCH string is an FTS5 syntax error).
+ * (verified 2026-08-20: `"a\"b*" OR 1=1"` sanitizes to inert quoted terms
+ * that match nothing, rather than being interpreted as FTS5 syntax.)
+ */
+export function sanitizeFtsQuery(q) {
+  return String(q ?? '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((term) => `"${term.replace(/"/g, '')}"*`)
+    .join(' AND ');
+}
+
+/**
+ * Full-text search over `nodes_fts` (id, name, qualified_name, docstring,
+ * signature — SPEC §2), joined back to `nodes` by rowid (verified
+ * 2026-08-20 against the fixture index) for full node columns. Ordered by
+ * bm25 rank, then deterministic tiebreakers.
+ */
+export function searchNodes(db, q, limit) {
+  const match = sanitizeFtsQuery(q);
+  if (match === '') return [];
+  return db
+    .prepare(
+      `SELECT nodes.* FROM nodes_fts
+       JOIN nodes ON nodes.rowid = nodes_fts.rowid
+       WHERE nodes_fts MATCH ?
+       ORDER BY bm25(nodes_fts) ASC, nodes.file_path ASC, nodes.start_line ASC, nodes.id ASC
+       LIMIT ?`
+    )
+    .all(match, limit);
 }

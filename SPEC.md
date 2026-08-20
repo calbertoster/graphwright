@@ -1,6 +1,6 @@
 # Graphwright — v1 Specification
 
-> Status: **v1 built, all acceptance tests passing; v2 (`serve`, interactive viewer) spec committed 2026-08-19, unbuilt — see §10, checklist §11.** §9/§11 are the build checklists — update them at the end of every working session; they are this repo's working memory.
+> Status: **v1 and v2 built, all 10 acceptance tests passing (`npm test`) — see §10 for the `serve` design and §11 for its build checklist.** §9/§11 are the build checklists — update them at the end of every working session; they are this repo's working memory.
 > Origin: designed in the SRVS-One project (2026-08-19). **Every claim marked "verified" below was verified by execution** against codegraph 1.5.0 and a real 362-file index (5,709 nodes / 12,649 edges); nothing in §2 is guessed.
 
 Graphwright is a portable, human-facing visualization companion for [colbymchenry/codegraph](https://github.com/colbymchenry/codegraph) indexes: `graphwright view` renders a filtered neighborhood of any symbol as SVG/DOT/Mermaid, and `graphwright wiki` generates a browsable markdown wiki of the codebase from the index. It works in **any** repo that has run `codegraph init` — no coupling to any particular project.
@@ -36,6 +36,9 @@ Graphwright is a portable, human-facing visualization companion for [colbymchenr
 - **(design decision 2026-08-19)** Wiki's cross-group dependency counts use the same edge-kind set as the intra-group diagram (`imports`, `calls`) for consistency, rather than all non-`contains` kinds.
 - **(verified + design decision 2026-08-19)** With `contains` excluded from the default traversal kinds (as §4 requires), a **class-kind** node has no outgoing default-kind edges reachable from itself — `calls`/`references`/`imports` only ever touch a class node from *outside* (an inbound `imports` from a file, or an inbound `references`/`instantiates` from another symbol); the class's own methods are reachable only via the excluded `contains` edge. So starting `view` on a bare class node can never surface a same-class method's cross-file `calls` edge within any depth, by design (not a bug). §7 acceptance test 1 ("`view` on a fixture class at depth 2 emits DOT containing the known cross-file call edge") is therefore satisfied by targeting a **method belonging to one of the fixture's classes** (`sayHello` on `GreetingService`, which calls `greet` on `EnglishGreeter` in another file) rather than the class node itself — the smallest reasonable reading that's actually reachable under the documented default-kinds behavior.
 - **(verified 2026-08-19)** Node's built-in test runner, invoked with a bare directory (`node --test test/`) or with no args, recursively auto-discovers and tries to *execute as tests* every file under any directory literally named `test` — including our `test/fixture/src/*.ts` fixture sources, which aren't test files and don't even parse (legacy decorator syntax isn't valid in Node's default/experimental TS handling). Fix: `package.json`'s `test` script and CI must point `node --test` at the explicit acceptance file (`node --test test/acceptance.test.js`), never at the bare `test/` directory.
+- **(verified 2026-08-20, v2 build session, same fixture)** `nodes_fts` (FTS5) rows join back to `nodes` via `nodes.rowid = nodes_fts.rowid` (its `content_rowid='rowid'`) — `SELECT nodes.* FROM nodes_fts JOIN nodes ON nodes.rowid = nodes_fts.rowid WHERE nodes_fts MATCH ? ORDER BY bm25(nodes_fts) ...` returns full node columns ranked by relevance. An unescaped user query containing `"` or bare FTS5 operators (`OR`, `-`, `*`) throws `fts5: syntax error` or silently changes query semantics; graphwright's `sanitizeFtsQuery` (src/db.mjs) neutralizes this by splitting on whitespace and wrapping each term as a quoted-string prefix term (`"term"*`), verified to turn `a"b* OR 1=1` into an inert query rather than a syntax error or an injected `OR`.
+- **(verified 2026-08-20)** `files.node_count` is already computed by codegraph (not something graphwright needs to derive by joining `nodes`) — confirmed non-zero and per-file-accurate on the fixture (e.g. `src/greeting-service.ts` → 7).
+- **(verified 2026-08-20)** SSE change detection: a writer's `DatabaseSync` (non-readonly) connection checkpoints and removes its `-wal`/`-shm` sidecar files on `close()`, and the main `.db` file's mtime updates at that point — confirmed on the fixture db. So polling the main db file's mtime alone (no need to also stat `-wal`) reliably fires after a `codegraph init`/rebuild, which opens, writes, and closes its connection. graphwright's serve poll additionally checks `MAX(nodes.updated_at)` as a second signal per §10.3, but mtime alone was sufficient in testing.
 
 ## 3. Package shape
 
@@ -157,14 +160,22 @@ Own indexer/watcher (codegraph owns the db) · an MCP server (host repos already
 
 ## 11. v2 build checklist (working memory — update at session end)
 
-- [ ] `serve` command skeleton: node:http, static app, --port/--project/--open
-- [ ] JSON API endpoints over src/db.mjs (deterministic ordering)
-- [ ] SSE index-change detection (mtime + MAX(updated_at) poll)
-- [ ] Vendored d3 + THIRD_PARTY_NOTICES.md
-- [ ] View 1: Explore (search → candidates → force layout, expand, caps)
-- [ ] View 2: Imports (directory-collapsible, cycle highlight)
-- [ ] View 3: Calls (group/file-scoped)
-- [ ] View 4: Treemap
-- [ ] Editor-jump wiring (+ --editor-url template)
-- [ ] Acceptance tests 6–10 + manual UI checklist in README
-- [ ] README: serve section, screenshots optional
+- [x] `serve` command skeleton: node:http, static app, --port/--project/--open
+- [x] JSON API endpoints over src/db.mjs (deterministic ordering) — `src/api.mjs`
+- [x] SSE index-change detection (mtime + MAX(updated_at) poll)
+- [x] Vendored d3 + THIRD_PARTY_NOTICES.md
+- [x] View 1: Explore (search → candidates → force layout, expand, caps)
+- [x] View 2: Imports (directory-collapsible, cycle highlight)
+- [x] View 3: Calls (group/file-scoped)
+- [x] View 4: Treemap
+- [x] Editor-jump wiring (+ --editor-url template)
+- [x] Acceptance tests 6–10 + manual UI checklist in README
+- [x] README: serve section, screenshots optional (skipped — text-only)
+
+**v2 complete (2026-08-20).** All 10 §7/§10.5 acceptance tests pass (`npm test`). Zero runtime dependencies held throughout: d3 is vendored under `vendor/`, never an npm dependency. Build-session notes:
+- `src/api.mjs` holds pure JSON-builder functions (meta/search/node/neighborhood/files/groups/edges) over `src/db.mjs`, reused by `src/serve.mjs`'s HTTP routing — kept separate so the API shape is unit-testable without spinning up a server.
+- `wiki.mjs`'s grouping logic was factored out into an exported `computeGroups()` so `/api/groups` and `graphwright wiki` share one implementation rather than two.
+- `/api/edges` requires exactly one of `group`/`file` (400 otherwise) — the "never an unscoped whole-graph dump" rule from §10.3 is enforced server-side, not left to frontend discipline.
+- The four views share one force-directed renderer (`public/views/forcegraph.mjs`) between Explore and Calls; Imports collapses symbol-level `imports` edges to file level client-side (same technique `wiki.mjs` already used) and flags cycle edges via Tarjan SCC.
+- Frontend has no build step: `public/app.mjs` and `public/views/*.mjs` are plain ES modules; `vendor/d3.js` is the unminified UMD bundle loaded via a one-line ESM side-effect import (`vendor/d3.mjs`) that reads `globalThis.d3` back out — verified working under Node's ESM loader and, by the same mechanism, `<script type="module">` in a browser.
+- Test 8 (SSE within 5s) copies the whole fixture project (source + `.codegraph/`) to a tmp dir per run and drives it with `codegraph sync`, never touching the git-tracked fixture — `codegraph init` on an already-initialized project is a no-op (§2), so `sync` (not `init`) is the correct rebuild verb for this test.

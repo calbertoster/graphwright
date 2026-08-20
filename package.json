@@ -1,7 +1,7 @@
 {
   "name": "graphwright",
   "version": "0.1.0",
-  "description": "Portable visualization companion for codegraph indexes — render symbol neighborhoods and generate browsable wikis.",
+  "description": "Portable visualization companion for codegraph indexes — render symbol neighborhoods, generate browsable wikis, and serve an interactive web viewer.",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -10,8 +10,11 @@
   "files": [
     "bin",
     "src",
+    "public",
+    "vendor",
     "README.md",
-    "SPEC.md"
+    "SPEC.md",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "engines": {
     "node": ">=22.5.0"
