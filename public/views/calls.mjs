@@ -1,7 +1,5 @@
 import { renderForceGraph } from './forcegraph.mjs';
 
-const GROUP_DEPTH = 2; // matches api.mjs's DEFAULT_GROUP_DEPTH
-
 function groupForPath(filePath, depth) {
   const parts = filePath.split('/');
   parts.pop();
@@ -21,7 +19,8 @@ function flattenFiles(node, out) {
 function mount(rootEl, toolbarEl, ctx) {
   let destroyed = false;
   let controller = null;
-  const local = { group: ctx.state.group, file: ctx.state.file, kinds: new Set(['calls', 'references']) };
+  let requestToken = 0;
+  const local = { group: ctx.state.group, file: ctx.state.file, groupDepth: 2, kinds: new Set(['calls', 'references']) };
   let statusEl;
   let groupSelect;
   let fileSelect;
@@ -39,7 +38,7 @@ function mount(rootEl, toolbarEl, ctx) {
     if (!local.group) return;
     try {
       const tree = await ctx.api.files();
-      const files = flattenFiles(tree, []).filter((f) => groupForPath(f.path, GROUP_DEPTH) === local.group);
+      const files = flattenFiles(tree, []).filter((f) => groupForPath(f.path, local.groupDepth) === local.group);
       files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
       for (const f of files) {
         const opt = document.createElement('option');
@@ -93,7 +92,8 @@ function mount(rootEl, toolbarEl, ctx) {
     toolbarEl.appendChild(statusEl);
 
     try {
-      const { groups } = await ctx.api.groups();
+      const { depth, groups } = await ctx.api.groups();
+      local.groupDepth = depth;
       for (const g of groups) {
         const opt = document.createElement('option');
         opt.value = g.group;
@@ -128,7 +128,7 @@ function mount(rootEl, toolbarEl, ctx) {
       showEmpty('Enable at least one edge kind above.');
       return;
     }
-    if (controller) controller.destroy();
+    const token = ++requestToken;
     let data;
     try {
       data = await ctx.api.edges(
@@ -137,10 +137,12 @@ function mount(rootEl, toolbarEl, ctx) {
           : { group: local.group, kinds: [...local.kinds].join(',') }
       );
     } catch (err) {
+      if (destroyed || token !== requestToken) return;
       showEmpty('Error: ' + err.message);
       return;
     }
-    if (destroyed) return;
+    if (destroyed || token !== requestToken) return;
+    if (controller) controller.destroy();
     statusEl.textContent = data.nodes.length + ' symbols · ' + data.edges.length + ' edges';
     controller = renderForceGraph(
       rootEl,

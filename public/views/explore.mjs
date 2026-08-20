@@ -8,6 +8,7 @@ const MAX_CAP = 1500;
 function mount(rootEl, toolbarEl, ctx) {
   let destroyed = false;
   let controller = null;
+  let requestToken = 0;
   const local = { depth: 2, direction: 'both', kinds: new Set(DEFAULT_KINDS), cap: CAP_STEP };
   let statusEl;
 
@@ -96,7 +97,7 @@ function mount(rootEl, toolbarEl, ctx) {
       if (statusEl) statusEl.textContent = '';
       return;
     }
-    if (controller) controller.destroy();
+    const token = ++requestToken;
     let data;
     try {
       data = await ctx.api.neighborhood(origin.id, {
@@ -106,10 +107,12 @@ function mount(rootEl, toolbarEl, ctx) {
         cap: local.cap,
       });
     } catch (err) {
+      if (destroyed || token !== requestToken) return;
       showEmpty(`Error: ${err.message}`);
       return;
     }
-    if (destroyed) return;
+    if (destroyed || token !== requestToken) return;
+    if (controller) controller.destroy();
     statusEl.textContent = `${data.nodes.length} nodes · ${data.edges.length} edges${data.overflow ? ' (capped — Load more for the rest)' : ''}`;
     controller = renderForceGraph(
       rootEl,

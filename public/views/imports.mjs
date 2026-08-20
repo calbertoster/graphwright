@@ -2,6 +2,12 @@ import { renderForceGraph } from './forcegraph.mjs';
 
 const SEP = '|';
 
+/**
+ * Tarjan's SCC algorithm, iterative (explicit work stack standing in for the
+ * call stack) rather than recursive — a recursive version blows V8's stack
+ * on a long deterministic import chain (hundreds of files in a barrel/
+ * re-export chain), which is well within range for real monorepos.
+ */
 function stronglyConnectedComponents(nodeIds, adj) {
   let index = 0;
   const indices = new Map();
@@ -10,33 +16,49 @@ function stronglyConnectedComponents(nodeIds, adj) {
   const stack = [];
   const comps = [];
 
-  function strongconnect(v) {
-    indices.set(v, index);
-    low.set(v, index);
+  for (const start of nodeIds) {
+    if (indices.has(start)) continue;
+    indices.set(start, index);
+    low.set(start, index);
     index++;
-    stack.push(v);
-    onStack.set(v, true);
-    for (const w of adj.get(v) || []) {
-      if (!indices.has(w)) {
-        strongconnect(w);
-        low.set(v, Math.min(low.get(v), low.get(w)));
-      } else if (onStack.get(w)) {
-        low.set(v, Math.min(low.get(v), indices.get(w)));
+    stack.push(start);
+    onStack.set(start, true);
+    const callStack = [{ v: start, neighbors: adj.get(start) || [], i: 0 }];
+
+    while (callStack.length > 0) {
+      const frame = callStack[callStack.length - 1];
+      if (frame.i < frame.neighbors.length) {
+        const w = frame.neighbors[frame.i++];
+        if (!indices.has(w)) {
+          indices.set(w, index);
+          low.set(w, index);
+          index++;
+          stack.push(w);
+          onStack.set(w, true);
+          callStack.push({ v: w, neighbors: adj.get(w) || [], i: 0 });
+        } else if (onStack.get(w)) {
+          low.set(frame.v, Math.min(low.get(frame.v), indices.get(w)));
+        }
+      } else {
+        callStack.pop();
+        if (callStack.length > 0) {
+          const parent = callStack[callStack.length - 1];
+          low.set(parent.v, Math.min(low.get(parent.v), low.get(frame.v)));
+        }
+        if (low.get(frame.v) === indices.get(frame.v)) {
+          const comp = [];
+          let w;
+          do {
+            w = stack.pop();
+            onStack.set(w, false);
+            comp.push(w);
+          } while (w !== frame.v);
+          comps.push(comp);
+        }
       }
-    }
-    if (low.get(v) === indices.get(v)) {
-      const comp = [];
-      let w;
-      do {
-        w = stack.pop();
-        onStack.set(w, false);
-        comp.push(w);
-      } while (w !== v);
-      comps.push(comp);
     }
   }
 
-  for (const v of nodeIds) if (!indices.has(v)) strongconnect(v);
   return comps;
 }
 
@@ -87,6 +109,7 @@ function collapseToFileGraph(nodes, edges) {
 function mount(rootEl, toolbarEl, ctx) {
   let destroyed = false;
   let controller = null;
+  let requestToken = 0;
   const local = { group: ctx.state.group };
   let statusEl;
   let groupSelect;
@@ -135,15 +158,17 @@ function mount(rootEl, toolbarEl, ctx) {
       showEmpty('No groups in this index.');
       return;
     }
-    if (controller) controller.destroy();
+    const token = ++requestToken;
     let data;
     try {
       data = await ctx.api.edges({ group: local.group, kinds: 'imports' });
     } catch (err) {
+      if (destroyed || token !== requestToken) return;
       showEmpty('Error: ' + err.message);
       return;
     }
-    if (destroyed) return;
+    if (destroyed || token !== requestToken) return;
+    if (controller) controller.destroy();
     const { fileNodes, fileEdges, cycleCount } = collapseToFileGraph(data.nodes, data.edges);
     statusEl.textContent = fileNodes.length + ' files · ' + fileEdges.length + ' import edges' + (cycleCount > 0 ? ' · ' + cycleCount + ' import cycle(s) highlighted' : '');
     controller = renderForceGraph(

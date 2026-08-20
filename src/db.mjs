@@ -44,6 +44,11 @@ export function resolveIndexPath({ cwd, project }) {
   return { path: found };
 }
 
+function queryMaxSchemaVersion(db) {
+  const row = db.prepare('SELECT MAX(version) AS v FROM schema_versions').get();
+  return row ? row.v : null;
+}
+
 /**
  * Open the index read-only. Returns { db, warning } on success, or throws.
  * Schema drift (§2 guard) warns rather than crashing.
@@ -59,9 +64,9 @@ export function openIndex(path) {
   }
   let warning = null;
   try {
-    const row = db.prepare('SELECT MAX(version) AS v FROM schema_versions').get();
-    if (!row || row.v !== EXPECTED_SCHEMA_VERSION) {
-      warning = `codegraph schema version is ${row ? row.v : 'unknown'}, expected ${EXPECTED_SCHEMA_VERSION} — proceeding anyway, results may be inaccurate.`;
+    const version = queryMaxSchemaVersion(db);
+    if (version !== EXPECTED_SCHEMA_VERSION) {
+      warning = `codegraph schema version is ${version ?? 'unknown'}, expected ${EXPECTED_SCHEMA_VERSION} — proceeding anyway, results may be inaccurate.`;
     }
   } catch (err) {
     warning = `Could not read schema_versions (${err.message}) — proceeding anyway, results may be inaccurate.`;
@@ -75,8 +80,7 @@ export function openIndex(path) {
  */
 export function getSchemaVersion(db) {
   try {
-    const row = db.prepare('SELECT MAX(version) AS v FROM schema_versions').get();
-    return row ? row.v : null;
+    return queryMaxSchemaVersion(db);
   } catch {
     return null;
   }

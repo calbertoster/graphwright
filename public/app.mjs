@@ -131,7 +131,7 @@ async function runSearch(q) {
   els.searchResults.innerHTML = '';
   for (const c of result.candidates) {
     const row = document.createElement('div');
-    row.innerHTML = `<span class="kind">${c.kind}</span>${escapeHtml(c.name)}<span class="loc">${escapeHtml(c.qualified_name || '')} — ${escapeHtml(c.file_path)}:${c.start_line}</span>`;
+    row.innerHTML = `<span class="kind">${escapeHtml(c.kind)}</span>${escapeHtml(c.name)}<span class="loc">${escapeHtml(c.qualified_name || '')} — ${escapeHtml(c.file_path)}:${c.start_line}</span>`;
     row.addEventListener('click', () => pickCandidate(c));
     els.searchResults.appendChild(row);
   }
