@@ -93,7 +93,7 @@ export function createApp({ dbPath, editorUrlTemplate = DEFAULT_EDITOR_URL }) {
         return sendJson(res, 200, api.buildSearch(db, { q: searchParams.get('q'), limit: searchParams.get('limit') }));
       }
       if (pathname === '/api/files' && req.method === 'GET') {
-        return sendJson(res, 200, api.buildFiles(db));
+        return sendJson(res, 200, api.buildFiles(db, { depth: searchParams.get('depth') }));
       }
       if (pathname === '/api/groups' && req.method === 'GET') {
         return sendJson(res, 200, api.buildGroups(db, { depth: searchParams.get('depth') }));

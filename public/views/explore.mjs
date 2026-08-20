@@ -1,4 +1,5 @@
 import { renderForceGraph } from './forcegraph.mjs';
+import { escapeHtml } from '../util.mjs';
 
 const ALL_KINDS = ['calls', 'references', 'imports', 'contains', 'implements', 'decorates', 'instantiates'];
 const DEFAULT_KINDS = new Set(['calls', 'references', 'imports']);
@@ -82,7 +83,7 @@ function mount(rootEl, toolbarEl, ctx) {
   }
 
   function showEmpty(message) {
-    rootEl.innerHTML = `<div class="gw-empty">${message}</div>`;
+    rootEl.innerHTML = `<div class="gw-empty">${escapeHtml(message)}</div>`;
   }
 
   function setOrigin(node) {
@@ -95,6 +96,10 @@ function mount(rootEl, toolbarEl, ctx) {
     if (!origin) {
       showEmpty('Search for a symbol above to explore its neighborhood.');
       if (statusEl) statusEl.textContent = '';
+      return;
+    }
+    if (local.kinds.size === 0) {
+      showEmpty('Enable at least one edge kind above.');
       return;
     }
     const token = ++requestToken;

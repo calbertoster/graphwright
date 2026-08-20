@@ -12,7 +12,7 @@ import {
   getEdgesAmong,
   getNodesByIds,
 } from './db.mjs';
-import { computeGroups } from './wiki.mjs';
+import { computeGroups, groupForPath } from './wiki.mjs';
 
 const DEFAULT_NEIGHBORHOOD_CAP = 300;
 const MAX_NEIGHBORHOOD_CAP = 1500;
@@ -65,13 +65,16 @@ function nodeSummary(n) {
 export function buildMeta(db, { editorUrlTemplate }) {
   const counts = getCounts(db);
   const schemaVersion = getSchemaVersion(db);
-  const { groupNames } = computeGroups(getAllNodes(db), DEFAULT_GROUP_DEPTH);
+  // Group count only needs the (small) files table, not a full node scan +
+  // per-group stats — computeGroups() is for /api/groups, which needs those
+  // stats; this just needs the count of distinct group names.
+  const groupNames = new Set(getAllFiles(db).map((f) => groupForPath(f.path, DEFAULT_GROUP_DEPTH)));
   return {
     schemaVersion,
     nodeCount: counts.nodeCount,
     edgeCount: counts.edgeCount,
     fileCount: counts.fileCount,
-    groupCount: groupNames.length,
+    groupCount: groupNames.size,
     editorUrlTemplate,
   };
 }
@@ -129,9 +132,14 @@ export function buildNeighborhood(db, id, { depth, kinds, direction, cap }) {
 }
 
 /**
- * GET /api/files — a directory tree with `files.node_count` per leaf.
+ * GET /api/files?depth= — a directory tree with `files.node_count` per leaf.
+ * Each leaf also carries its §5 group name (at `depth`, default matching
+ * /api/groups' default) so a client scoping UI to a group (e.g. the Calls
+ * view's per-file dropdown) can filter by it directly instead of
+ * reimplementing groupForPath's directory-prefix-truncation logic itself.
  */
-export function buildFiles(db) {
+export function buildFiles(db, { depth } = {}) {
+  const depthN = clampInt(depth, { min: 0, max: 20, fallback: DEFAULT_GROUP_DEPTH });
   const files = getAllFiles(db); // already sorted by path (db.mjs)
   const root = { name: '.', children: new Map() };
   for (const f of files) {
@@ -143,7 +151,14 @@ export function buildFiles(db) {
         node.children.set(
           part,
           isLeaf
-            ? { name: part, path: f.path, language: f.language, size: f.size, node_count: f.node_count }
+            ? {
+                name: part,
+                path: f.path,
+                language: f.language,
+                size: f.size,
+                node_count: f.node_count,
+                group: groupForPath(f.path, depthN),
+              }
             : { name: part, children: new Map() }
         );
       }

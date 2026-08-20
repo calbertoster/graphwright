@@ -1,4 +1,5 @@
 import d3 from '/vendor/d3.mjs';
+import { escapeHtml } from '../util.mjs';
 
 const W = 1000;
 const H = 700;
@@ -26,7 +27,7 @@ function mount(rootEl, toolbarEl, ctx) {
   toolbarEl.appendChild(statusEl);
 
   function showEmpty(message) {
-    rootEl.innerHTML = '<div class="gw-empty">' + message + '</div>';
+    rootEl.innerHTML = '<div class="gw-empty">' + escapeHtml(message) + '</div>';
   }
 
   async function load() {
@@ -94,7 +95,7 @@ function mount(rootEl, toolbarEl, ctx) {
     const legend = document.createElement('div');
     legend.className = 'legend';
     legend.innerHTML = langs
-      .map((l) => '<div><span class="swatch" style="background:' + color(l) + '"></span>' + l + '</div>')
+      .map((l) => '<div><span class="swatch" style="background:' + color(l) + '"></span>' + escapeHtml(l) + '</div>')
       .join('');
     rootEl.appendChild(legend);
 

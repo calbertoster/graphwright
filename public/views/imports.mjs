@@ -1,4 +1,5 @@
 import { renderForceGraph } from './forcegraph.mjs';
+import { escapeHtml } from '../util.mjs';
 
 const SEP = '|';
 
@@ -150,7 +151,7 @@ function mount(rootEl, toolbarEl, ctx) {
   }
 
   function showEmpty(message) {
-    rootEl.innerHTML = '<div class="gw-empty">' + message + '</div>';
+    rootEl.innerHTML = '<div class="gw-empty">' + escapeHtml(message) + '</div>';
   }
 
   async function load() {

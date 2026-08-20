@@ -1,11 +1,5 @@
 import { renderForceGraph } from './forcegraph.mjs';
-
-function groupForPath(filePath, depth) {
-  const parts = filePath.split('/');
-  parts.pop();
-  const truncated = parts.slice(0, Math.max(0, depth));
-  return truncated.length === 0 ? '.' : truncated.join('/');
-}
+import { escapeHtml } from '../util.mjs';
 
 function flattenFiles(node, out) {
   if (node.path) {
@@ -26,7 +20,7 @@ function mount(rootEl, toolbarEl, ctx) {
   let fileSelect;
 
   function showEmpty(message) {
-    rootEl.innerHTML = '<div class="gw-empty">' + message + '</div>';
+    rootEl.innerHTML = '<div class="gw-empty">' + escapeHtml(message) + '</div>';
   }
 
   async function refreshFileOptions() {
@@ -37,8 +31,8 @@ function mount(rootEl, toolbarEl, ctx) {
     fileSelect.appendChild(anyOpt);
     if (!local.group) return;
     try {
-      const tree = await ctx.api.files();
-      const files = flattenFiles(tree, []).filter((f) => groupForPath(f.path, local.groupDepth) === local.group);
+      const tree = await ctx.api.files(local.groupDepth);
+      const files = flattenFiles(tree, []).filter((f) => f.group === local.group);
       files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
       for (const f of files) {
         const opt = document.createElement('option');

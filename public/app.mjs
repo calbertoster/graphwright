@@ -2,6 +2,7 @@ import exploreView from './views/explore.mjs';
 import importsView from './views/imports.mjs';
 import callsView from './views/calls.mjs';
 import treemapView from './views/treemap.mjs';
+import { escapeHtml } from './util.mjs';
 
 const VIEWS = [exploreView, importsView, callsView, treemapView];
 const VIEW_BY_ID = new Map(VIEWS.map((v) => [v.id, v]));
@@ -24,7 +25,7 @@ const api = {
   node: (id) => apiGet(`/api/node/${encodeURIComponent(id)}`),
   neighborhood: (id, params = {}) =>
     apiGet(`/api/neighborhood/${encodeURIComponent(id)}?${new URLSearchParams(clean(params))}`),
-  files: () => apiGet('/api/files'),
+  files: (depth) => apiGet(`/api/files${depth != null ? `?${new URLSearchParams({ depth })}` : ''}`),
   groups: (depth) => apiGet(`/api/groups${depth != null ? `?${new URLSearchParams({ depth })}` : ''}`),
   edges: (params = {}) => apiGet(`/api/edges?${new URLSearchParams(clean(params))}`),
 };
@@ -145,9 +146,6 @@ function pickCandidate(c) {
   navigateTo('explore', c);
 }
 
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 
 let searchDebounce = null;
 els.searchInput.addEventListener('input', () => {
