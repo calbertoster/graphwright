@@ -174,7 +174,16 @@ function tryOpenBrowser(url) {
   const cmd = platform === 'darwin' ? 'open' : platform === 'win32' ? 'cmd' : 'xdg-open';
   const args = platform === 'win32' ? ['/c', 'start', '""', url] : [url];
   try {
-    spawn(cmd, args, { stdio: 'ignore', detached: true }).unref();
+    const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
+    // A missing opener (headless boxes, containers, minimal images) fails
+    // ASYNCHRONOUSLY: spawn returns, then emits 'error'. An unhandled 'error'
+    // on a ChildProcess throws and would kill the server we just started —
+    // so this listener is load-bearing, not defensive. try/catch cannot
+    // reach it. Serving is the job; opening a browser is a convenience.
+    child.on('error', () => {
+      process.stderr.write(`(could not launch a browser — open ${url} yourself)\n`);
+    });
+    child.unref();
   } catch {
     // best-effort only
   }

@@ -40,6 +40,8 @@ Graphwright is a portable, human-facing visualization companion for [colbymchenr
 - **(verified 2026-08-20)** `files.node_count` is already computed by codegraph (not something graphwright needs to derive by joining `nodes`) — confirmed non-zero and per-file-accurate on the fixture (e.g. `src/greeting-service.ts` → 7).
 - **(verified 2026-08-20)** SSE change detection: a writer's `DatabaseSync` (non-readonly) connection checkpoints and removes its `-wal`/`-shm` sidecar files on `close()`, and the main `.db` file's mtime updates at that point — confirmed on the fixture db. So polling the main db file's mtime alone (no need to also stat `-wal`) reliably fires after a `codegraph init`/rebuild, which opens, writes, and closes its connection. graphwright's serve poll additionally checks `MAX(nodes.updated_at)` as a second signal per §10.3, but mtime alone was sufficient in testing.
 
+- **(verified 2026-08-21, this devcontainer)** A missing browser opener fails **asynchronously**: `spawn('xdg-open')` returns a ChildProcess and *then* emits `'error'` (ENOENT), which `try/catch` cannot reach — an unhandled `'error'` event throws and **killed the server that had just started listening**. `serve --open` must attach a `child.on('error')` handler and degrade to printing the URL. Headless boxes, containers, and minimal images have no `xdg-open`; per §6.4 this is a supported configuration, not an error. Fixed 2026-08-21.
+
 ## 3. Package shape
 
 - npm name `graphwright` (verified available 2026-08-19). Single bin: `graphwright` with `view` and `wiki` subcommands plus `-h`/`-V`.
