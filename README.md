@@ -1,12 +1,13 @@
 # Graphwright
 
-Human-facing views for [codegraph](https://github.com/colbymchenry/codegraph) indexes: render any symbol's neighborhood as an SVG, or generate a browsable markdown wiki of your codebase — from the index codegraph already built, in any repo, with zero runtime dependencies.
+Human-facing views for [codegraph](https://github.com/colbymchenry/codegraph) indexes: render any symbol's neighborhood as an SVG, generate a browsable markdown wiki of your codebase, or start an interactive web viewer — from the index codegraph already built, in any repo, with zero runtime dependencies.
 
 The committed design lives in [SPEC.md](SPEC.md).
 
 ```bash
 graphwright view sayHello --depth 2 -o invite.svg          # neighborhood graph
 graphwright wiki --out docs/codegraph-wiki                 # generated wiki
+graphwright serve --open                                   # interactive web viewer
 ```
 
 Requires Node ≥ 22.5 and a project indexed with `codegraph init`. Graphviz (`dot`) is optional — without it, `view` writes a `.dot` file (or prints DOT text to stdout) instead of an SVG, with a notice on stderr.
@@ -48,6 +49,48 @@ graphwright wiki [--out docs/codegraph-wiki] [--group-depth 2]
 - `--project <path>` — project directory to search for `.codegraph/` (overrides walking up from the current directory).
 
 Rerunning `wiki` fully rewrites the output directory (stale group pages from a shrunk index are removed) and, with the default banner, produces byte-identical output for an unchanged index.
+
+## `graphwright serve`
+
+Starts a local web viewer over the index: multiple linked views of the graph in the browser, live against the index (via a poll-based SSE stream — graphwright never indexes itself; `codegraph`'s own watcher/`sync` owns the db), with double-click-to-editor.
+
+```
+graphwright serve [--port 4173] [--project <path>] [--editor-url <template>] [--open]
+```
+
+- `--port <n>` — port to listen on (default `4173`).
+- `--project <path>` — project directory to search for `.codegraph/` (overrides walking up from the current directory).
+- `--editor-url <template>` — URL template for double-click-to-editor, with `{path}` and `{line}` placeholders (default `vscode://file/{path}:{line}`).
+- `--open` — open the app in the default browser once the server is listening.
+
+The server is entirely self-contained (no CDN references — it works air-gapped/firewalled) and read-only against the index: it serves one HTML app, a JSON API, and an SSE stream, all from a plain `node:http` server with zero runtime dependencies. d3 v7 is vendored under `vendor/` (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)) rather than installed as a package.
+
+**Views** (switch with number keys `1`–`4`, shared search/selection state across all of them):
+
+1. **Explore** — search for a symbol, then browse its force-directed neighborhood (mirrors `view`'s depth/kinds/direction controls); click a node to re-center on it, double-click to jump to its source, "Load more" past the size cap.
+2. **Imports** — file-level import graph for a selected group, collapsible by directory, import cycles highlighted in red.
+3. **Calls** — symbol-level `calls`/`references` subgraph scoped to a selected group or file (never the whole graph — see the collision constraint below).
+4. **Treemap** — directory treemap sized by file symbol count, colored by language; click a file to jump into Explore centered on it.
+
+**JSON API** (all deterministic ordering — identical queries return byte-identical responses): `GET /api/meta`, `/api/search?q=`, `/api/node/:id`, `/api/neighborhood/:id?depth&kinds&direction&cap`, `/api/files`, `/api/groups?depth=`, `/api/edges?kinds=&group=|&file=` (always scoped — never an unscoped whole-graph dump), and an SSE stream at `/api/events` emitting `index-changed`.
+
+**The collision constraint.** On real codebases, most bare symbol names are ambiguous — cross-file method duplicates like `constructor`, `handleError`, or `update` are common. Everywhere in `serve`: node identity is always `nodes.id`; the UI disambiguates with `qualified_name` and `file_path:start_line`; a bare name is search input only, never a merge key. See SPEC.md §10.2 for the measured numbers behind this.
+
+**Known performance tradeoff.** `/api/edges`, `/api/groups`, and `/api/search` re-read the full index and recompute grouping on every request rather than caching or querying just the requested scope — so a group/file toggle in the Calls or Imports view costs a full scan, not a targeted lookup. This is fine at the scale graphwright targets (§2's reference index is ~5,700 nodes / ~12,600 edges) and mirrors what `wiki` already does once per process; it just isn't optimized for very large indexes. See SPEC.md §10.3 for the full note.
+
+### Manual UI checklist
+
+Not automated (SPEC.md §10.6 — no browser-automation tests in CI); check by hand against a real index after UI changes:
+
+- [ ] All four views render against a real (non-fixture) index.
+- [ ] Double-clicking a node opens it in the configured editor.
+- [ ] Node positions stay stable across an SSE-triggered refresh (edit a file, save, watch the graph update without nodes jumping).
+- [ ] `--editor-url` with a non-default template (e.g. a `cursor://` or JetBrains URL) opens correctly.
+- [ ] The app works with JavaScript devtools' network panel offline/throttled to confirm no external requests are attempted.
+
+### Acknowledgements
+
+`graphwright serve`'s view taxonomy and interaction model (multiple views over one graph switched by number keys, live re-render on index change with stable node positions, double-click-to-editor) are consciously borrowed from [brn-mwai/codegraph](https://github.com/brn-mwai/codegraph) (MIT). No code from that project is used — graphwright reads `codegraph.db` directly and its implementation was written independently; see SPEC.md §10.1 and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full attribution policy.
 
 ## Development
 

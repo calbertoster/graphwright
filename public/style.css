@@ -1,0 +1,153 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #666;
+  --border: #ddd;
+  --accent: #1f77b4;
+  --panel: #f7f7f7;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --fg: #eaeaea;
+    --muted: #9aa0a6;
+    --border: #333;
+    --panel: #1c1f24;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-wrap: wrap;
+}
+
+header h1 {
+  font-size: 14px;
+  margin: 0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tabs { display: flex; gap: 4px; }
+.tabs button {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+}
+.tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.search-box { position: relative; flex: 1; min-width: 200px; max-width: 420px; }
+.search-box input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+.search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+  z-index: 20;
+  display: none;
+}
+.search-results.open { display: block; }
+.search-results div {
+  padding: 5px 8px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.search-results div:last-child { border-bottom: none; }
+.search-results div:hover, .search-results div.sel { background: var(--panel); }
+.search-results .kind { color: var(--muted); margin-right: 6px; }
+.search-results .loc { color: var(--muted); font-size: 11px; display: block; }
+
+.meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.sse-dot { width: 8px; height: 8px; border-radius: 50%; background: #999; display: inline-block; margin-right: 4px; }
+.sse-dot.live { background: #2ca02c; }
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.toolbar label { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+.toolbar select, .toolbar input[type=number] {
+  font: inherit;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--fg);
+}
+.toolbar button {
+  font: inherit;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+.toolbar .status { color: var(--muted); margin-left: auto; }
+
+main { flex: 1; position: relative; overflow: hidden; }
+#view-root { position: absolute; inset: 0; }
+#view-root svg { width: 100%; height: 100%; display: block; cursor: grab; }
+#view-root svg:active { cursor: grabbing; }
+
+.gw-node circle, .gw-node rect { stroke: #fff; stroke-width: 1px; }
+.gw-node text {
+  font-size: 9px;
+  fill: var(--fg);
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+}
+.gw-edge { stroke-opacity: 0.6; fill: none; }
+.gw-edge.cycle { stroke: #e15759 !important; stroke-width: 2px; stroke-opacity: 0.9; }
+
+.gw-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+
+.legend { position: absolute; right: 12px; bottom: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; font-size: 11px; }
+.legend div { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+.legend .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }

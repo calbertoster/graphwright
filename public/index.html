@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>graphwright</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>graphwright</h1>
+    <nav class="tabs" id="tabs">
+      <button data-view="explore">1 Explore</button>
+      <button data-view="imports">2 Imports</button>
+      <button data-view="calls">3 Calls</button>
+      <button data-view="treemap">4 Treemap</button>
+    </nav>
+    <div class="search-box">
+      <input id="search-input" type="text" placeholder="Search symbols… (name, docstring)" autocomplete="off">
+      <div class="search-results" id="search-results"></div>
+    </div>
+    <span class="meta" id="meta-line"><span class="sse-dot" id="sse-dot"></span>loading…</span>
+  </header>
+  <div class="toolbar" id="toolbar"></div>
+  <main><div id="view-root"><div class="gw-empty">Search for a symbol, or pick a view.</div></div></main>
+</div>
+<script type="module" src="/app.mjs"></script>
+</body>
+</html>

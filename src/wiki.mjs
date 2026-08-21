@@ -8,11 +8,46 @@ const WIKI_EDGE_KINDS = ['imports', 'calls'];
 const TOP_EXPORTED_LIMIT = 5;
 const NON_SYMBOL_KINDS = new Set(['file', 'import']);
 
-function groupForPath(filePath, depth) {
+export function groupForPath(filePath, depth) {
   const parts = filePath.split('/');
   parts.pop();
   const truncated = parts.slice(0, Math.max(0, depth));
   return truncated.length === 0 ? '.' : truncated.join('/');
+}
+
+/**
+ * Group all nodes by §5's directory-prefix grouping. Shared by `wiki` (which
+ * also needs per-group node lists for page bodies) and `serve`'s
+ * `/api/groups` (which only needs the stats). Deterministic: group names
+ * sorted ascending, per-group symbol/file counts and top-exported names
+ * derived from the caller-supplied (already sorted) `allNodes`.
+ */
+export function computeGroups(allNodes, groupDepth) {
+  const groups = new Map();
+  const nodeGroup = new Map();
+  for (const n of allNodes) {
+    const g = groupForPath(n.file_path, groupDepth);
+    nodeGroup.set(n.id, g);
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(n);
+  }
+  const groupNames = [...groups.keys()].sort();
+
+  const groupStats = new Map();
+  for (const g of groupNames) {
+    const nodes = groups.get(g);
+    const files = new Set(nodes.map((n) => n.file_path));
+    const symbols = nodes.filter((n) => !NON_SYMBOL_KINDS.has(n.kind));
+    const topExported = nodes
+      .filter((n) => n.is_exported === 1)
+      .map((n) => n.name)
+      .sort()
+      .filter((v, i, arr) => arr.indexOf(v) === i)
+      .slice(0, TOP_EXPORTED_LIMIT);
+    groupStats.set(g, { fileCount: files.size, symbolCount: symbols.length, topExported });
+  }
+
+  return { groups, nodeGroup, groupNames, groupStats };
 }
 
 function groupPageRelPath(group) {
@@ -163,29 +198,7 @@ export function runWiki({ out, groupDepth, banner, maxDiagramEdges, project, cmd
   const wikiEdges = getAllEdges(db, WIKI_EDGE_KINDS);
   const nodesById = new Map(allNodes.map((n) => [n.id, n]));
 
-  const groups = new Map();
-  const nodeGroup = new Map();
-  for (const n of allNodes) {
-    const g = groupForPath(n.file_path, groupDepth);
-    nodeGroup.set(n.id, g);
-    if (!groups.has(g)) groups.set(g, []);
-    groups.get(g).push(n);
-  }
-  const groupNames = [...groups.keys()].sort();
-
-  const groupStats = new Map();
-  for (const g of groupNames) {
-    const nodes = groups.get(g);
-    const files = new Set(nodes.map((n) => n.file_path));
-    const symbols = nodes.filter((n) => !NON_SYMBOL_KINDS.has(n.kind));
-    const topExported = nodes
-      .filter((n) => n.is_exported === 1)
-      .map((n) => n.name)
-      .sort()
-      .filter((v, i, arr) => arr.indexOf(v) === i)
-      .slice(0, TOP_EXPORTED_LIMIT);
-    groupStats.set(g, { fileCount: files.size, symbolCount: symbols.length, topExported });
-  }
+  const { groups, nodeGroup, groupNames, groupStats } = computeGroups(allNodes, groupDepth);
 
   const bannerText = renderBanner(banner ?? DEFAULT_BANNER, cmd);
 
