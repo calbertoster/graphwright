@@ -76,6 +76,8 @@ The server is entirely self-contained (no CDN references — it works air-gapped
 
 **The collision constraint.** On real codebases, most bare symbol names are ambiguous — cross-file method duplicates like `constructor`, `handleError`, or `update` are common. Everywhere in `serve`: node identity is always `nodes.id`; the UI disambiguates with `qualified_name` and `file_path:start_line`; a bare name is search input only, never a merge key. See SPEC.md §10.2 for the measured numbers behind this.
 
+**Known performance tradeoff.** `/api/edges`, `/api/groups`, and `/api/search` re-read the full index and recompute grouping on every request rather than caching or querying just the requested scope — so a group/file toggle in the Calls or Imports view costs a full scan, not a targeted lookup. This is fine at the scale graphwright targets (§2's reference index is ~5,700 nodes / ~12,600 edges) and mirrors what `wiki` already does once per process; it just isn't optimized for very large indexes. See SPEC.md §10.3 for the full note.
+
 ### Manual UI checklist
 
 Not automated (SPEC.md §10.6 — no browser-automation tests in CI); check by hand against a real index after UI changes:
