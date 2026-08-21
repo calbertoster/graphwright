@@ -205,7 +205,7 @@ export function runServe({ port, project, editorUrl, open }, { cwd, stdout, stde
   return new Promise((resolvePromise) => {
     app.server.once('error', (err) => {
       stderr.write(`Failed to start server: ${err.message}\n`);
-      app.gwClose();
+      app.server.gwClose();
       resolvePromise(1);
     });
     app.server.listen(port, () => {

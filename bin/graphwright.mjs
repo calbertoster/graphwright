@@ -64,10 +64,11 @@ function fail(message) {
   process.exit(1);
 }
 
-function parseInt_(value, flagName, { min }) {
+function parseInt_(value, flagName, { min, max }) {
   const n = Number(value);
-  if (!Number.isInteger(n) || n < min) {
-    fail(`Invalid ${flagName}: "${value}" (must be an integer >= ${min})`);
+  if (!Number.isInteger(n) || n < min || (max != null && n > max)) {
+    const range = max != null ? `>= ${min} and <= ${max}` : `>= ${min}`;
+    fail(`Invalid ${flagName}: "${value}" (must be an integer ${range})`);
   }
   return n;
 }
@@ -212,7 +213,7 @@ if (command === 'view') {
     process.exit(0);
   }
 
-  const port = parseInt_(values.port, '--port', { min: 0 });
+  const port = parseInt_(values.port, '--port', { min: 0, max: 65535 });
 
   const exitCode = await runServe(
     {

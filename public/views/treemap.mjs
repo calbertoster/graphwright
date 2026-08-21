@@ -18,6 +18,7 @@ function annotateWithSizeAndLanguage(node) {
 
 function mount(rootEl, toolbarEl, ctx) {
   let destroyed = false;
+  let requestToken = 0;
   let statusEl;
 
   toolbarEl.innerHTML = '';
@@ -31,14 +32,16 @@ function mount(rootEl, toolbarEl, ctx) {
   }
 
   async function load() {
+    const token = ++requestToken;
     let tree;
     try {
       tree = await ctx.api.files();
     } catch (err) {
+      if (destroyed || token !== requestToken) return;
       showEmpty('Error: ' + err.message);
       return;
     }
-    if (destroyed) return;
+    if (destroyed || token !== requestToken) return;
     if (!tree.children || tree.children.length === 0) {
       showEmpty('No files in this index.');
       return;
